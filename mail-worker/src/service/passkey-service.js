@@ -65,8 +65,14 @@ export default {
     async verifyRegister(c, userId, challengeId, response) {
         const challengeRow = await c.env.db.prepare('SELECT challenge, expires_at FROM passkey_challenges WHERE id = ?').bind(challengeId).first();
         if (!challengeRow) throw new BizError('Invalid or expired challenge');
+
+        // If the challenge is expired, clean up and fail before verification
+        if (challengeRow.expires_at < Date.now()) {
+            await c.env.db.prepare('DELETE FROM passkey_challenges WHERE id = ? OR expires_at < ?').bind(challengeId, Date.now()).run();
+            throw new BizError('Invalid or expired challenge');
+        }
         
-        // Cleanup expired
+        // Cleanup expired (and this challenge) now that we've validated it's not expired
         await c.env.db.prepare('DELETE FROM passkey_challenges WHERE id = ? OR expires_at < ?').bind(challengeId, Date.now()).run();
 
         const verification = await verifyRegistrationResponse({
